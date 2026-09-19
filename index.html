@@ -1,1334 +1,371 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>앵그리 캐논: 턴제 맞대결 (Angry Fortress)</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Matter.js Physics Engine CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
-    <!-- FontAwesome Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Noto+Sans+KR:wght@400;700;900&display=swap');
-        
-        body {
-            font-family: 'Noto Sans KR', sans-serif;
-            touch-action: none;
-            user-select: none;
-            overflow: hidden;
-            background: #1a202c;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Flappy Combat: Sky Assault</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase SDK (v10 모듈) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, collection, addDoc, query, orderBy, limit, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        .game-font {
-            font-family: 'Fredoka One', 'Noto Sans KR', cursive;
-        }
+    // Demo Firebase Config (본인의 Firebase 프로젝트 설정으로 교체 가능)
+    const firebaseConfig = {
+      apiKey: "AIzaSyD-DemoKeyForFlappyCombat2026",
+      authDomain: "angry-birds-fortress-game.firebaseapp.com",
+      projectId: "angry-birds-fortress-game",
+      storageBucket: "angry-birds-fortress-game.appspot.com",
+      messagingSenderId: "1234567890",
+      appId: "1:1234567890:web:flappycombat"
+    };
 
-        /* custom canvas container overlay styles */
-        #game-container {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-            overflow: hidden;
-        }
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
 
-        canvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-        }
-
-        /* Floating Damage Text */
-        .damage-text {
-            position: absolute;
-            font-family: 'Fredoka One', sans-serif;
-            font-weight: 900;
-            font-size: 24px;
-            pointer-events: none;
-            animation: floatUpAndFade 1.2s ease-out forwards;
-            text-shadow: 2px 2px 0px #000, -2px -2px 0px #000, 2px -2px 0px #000, -2px 2px 0px #000;
-        }
-
-        @keyframes floatUpAndFade {
-            0% {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
-            50% {
-                transform: translateY(-30px) scale(1.3);
-            }
-            100% {
-                opacity: 0;
-                transform: translateY(-60px) scale(0.9);
-            }
-        }
-
-        /* Glassmorphism UI */
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.15);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.25);
-        }
-
-        .glass-dark {
-            background: rgba(15, 23, 42, 0.75);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .ammo-card {
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .ammo-card.selected {
-            border-color: #f59e0b !important;
-            background: rgba(245, 158, 11, 0.2) !important;
-            transform: translateY(-2px) scale(1.05);
-            box-shadow: 0 0 15px rgba(245, 158, 11, 0.4);
-        }
-        .ammo-card.disabled {
-            opacity: 0.4;
-            pointer-events: none;
-            filter: grayscale(1);
-        }
-    </style>
+    window.db = db;
+    window.dbOps = { collection, addDoc, query, orderBy, limit, getDocs, serverTimestamp };
+  </script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #0f172a;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      touch-action: manipulation;
+      user-select: none;
+      overflow: hidden;
+    }
+    #gameCanvas {
+      display: block;
+      margin: 0 auto;
+      background: linear-gradient(to bottom, #1e293b, #0f172a);
+    }
+  </style>
 </head>
-<body class="bg-slate-900 text-white select-none">
+<body class="flex flex-col items-center justify-center min-h-screen text-white relative">
 
-<div id="game-container">
-    <!-- Game Canvas -->
-    <canvas id="gameCanvas"></canvas>
-
-    <!-- Top HUD Bar -->
-    <div class="absolute top-0 left-0 w-full p-3 sm:p-5 flex justify-between items-start pointer-events-none z-10">
-        <!-- Player 1 Status (Left) -->
-        <div class="glass-dark rounded-2xl p-3 sm:p-4 w-40 sm:w-64 border-l-4 border-red-500 shadow-xl pointer-events-auto transition-all transform hover:scale-105">
-            <div class="flex justify-between items-center mb-1">
-                <span class="game-font text-red-400 text-base sm:text-xl font-bold flex items-center gap-2">
-                    <i class="fa-solid fa-crown"></i> P1 레드팀
-                </span>
-                <span id="p1-hp-text" class="text-xs sm:text-sm font-black text-red-200">100 / 100</span>
-            </div>
-            <!-- HP Bar Outer -->
-            <div class="w-full bg-slate-800 h-3 sm:h-5 rounded-full overflow-hidden p-0.5 border border-slate-600">
-                <div id="p1-hp-bar" class="h-full bg-gradient-to-r from-red-600 to-amber-500 rounded-full transition-all duration-300" style="width: 100%;"></div>
-            </div>
-        </div>
-
-        <!-- Center Match Info (Wind, Turn Indicator) -->
-        <div class="flex flex-col items-center gap-2 pointer-events-auto">
-            <!-- Turn Indicator Banner -->
-            <div id="turn-banner" class="glass-dark px-6 py-2 rounded-full border-2 border-amber-400 shadow-2xl flex items-center gap-3">
-                <div id="turn-dot" class="w-3.5 h-3.5 rounded-full bg-red-500 animate-pulse"></div>
-                <span id="turn-text" class="game-font text-lg sm:text-2xl text-amber-300 tracking-wider">P1 공격 턴!</span>
-            </div>
-
-            <!-- Wind Indicator -->
-            <div class="glass-dark px-4 py-1.5 rounded-xl border border-slate-700 flex items-center gap-2 text-xs sm:text-sm">
-                <span class="text-slate-400 font-bold"><i class="fa-solid fa-wind"></i> 바람:</span>
-                <div class="flex items-center gap-1 font-extrabold" id="wind-container">
-                    <i id="wind-arrow" class="fa-solid fa-arrow-right text-amber-400 transition-transform duration-500"></i>
-                    <span id="wind-speed" class="text-white">0 m/s</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Player 2 Status (Right) -->
-        <div class="glass-dark rounded-2xl p-3 sm:p-4 w-40 sm:w-64 border-r-4 border-blue-500 shadow-xl pointer-events-auto text-right transition-all transform hover:scale-105">
-            <div class="flex justify-between items-center mb-1 flex-row-reverse">
-                <span class="game-font text-blue-400 text-base sm:text-xl font-bold flex items-center gap-2">
-                    <i class="fa-solid fa-robot" id="p2-icon"></i> <span id="p2-name">P2 블루팀</span>
-                </span>
-                <span id="p2-hp-text" class="text-xs sm:text-sm font-black text-blue-200">100 / 100</span>
-            </div>
-            <!-- HP Bar Outer -->
-            <div class="w-full bg-slate-800 h-3 sm:h-5 rounded-full overflow-hidden p-0.5 border border-slate-600 flex justify-end">
-                <div id="p2-hp-bar" class="h-full bg-gradient-to-l from-blue-600 to-cyan-400 rounded-full transition-all duration-300" style="width: 100%;"></div>
-            </div>
-        </div>
+  <!-- HUD Upper UI -->
+  <div class="absolute top-4 left-4 right-4 flex justify-between items-center z-10 pointer-events-none max-w-lg mx-auto">
+    <div class="bg-slate-800/80 backdrop-blur border border-slate-700 px-4 py-2 rounded-xl">
+      <span class="text-xs text-slate-400 block font-bold">SCORE</span>
+      <span id="scoreDisplay" class="text-2xl font-black text-amber-400">0</span>
     </div>
+    <button onclick="openLeaderboard()" class="pointer-events-auto bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-900 font-extrabold px-4 py-2.5 rounded-xl shadow-lg transition flex items-center gap-2 text-sm">
+      🏆 리더보드
+    </button>
+  </div>
 
-    <!-- Ammo Selector Dock (Bottom Left/Center Overlay) -->
-    <div id="ammo-selector" class="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-10 flex gap-2 sm:gap-3 pointer-events-auto bg-slate-900/80 p-2 sm:p-3 rounded-2xl border border-slate-700 shadow-2xl backdrop-blur-md">
-        <!-- Ammo Card 1: Standard -->
-        <button id="ammo-standard" class="ammo-card selected glass-dark border border-slate-600 rounded-xl p-2 sm:p-2.5 flex flex-col items-center gap-1 w-16 sm:w-20 text-center cursor-pointer">
-            <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-amber-500 flex items-center justify-center text-slate-950 font-black shadow">
-                <i class="fa-solid fa-circle text-xs"></i>
-            </div>
-            <span class="text-[10px] sm:text-xs font-bold text-slate-200">일반탄</span>
-            <span class="text-[9px] sm:text-[10px] text-amber-400 font-extrabold">무제한</span>
-        </button>
+  <!-- Game Canvas -->
+  <canvas id="gameCanvas" width="400" height="600" class="rounded-2xl shadow-2xl border border-slate-800"></canvas>
 
-        <!-- Ammo Card 2: Heavy Bomb -->
-        <button id="ammo-heavy" class="ammo-card glass-dark border border-slate-600 rounded-xl p-2 sm:p-2.5 flex flex-col items-center gap-1 w-16 sm:w-20 text-center cursor-pointer">
-            <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-red-600 flex items-center justify-center text-white font-black shadow">
-                <i class="fa-solid fa-bomb text-sm"></i>
-            </div>
-            <span class="text-[10px] sm:text-xs font-bold text-slate-200">고폭탄</span>
-            <span id="ammo-count-heavy" class="text-[9px] sm:text-[10px] text-red-400 font-extrabold">2/2</span>
-        </button>
+  <!-- Start Overlay -->
+  <div id="startOverlay" class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center z-20">
+    <h1 class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 mb-2">FLAPPY COMBAT</h1>
+    <p class="text-slate-400 text-sm mb-6">스페이스바 또는 화면 터치로 비행하세요!</p>
+    <button onclick="startGame()" class="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-95 text-slate-950 font-black px-8 py-3 rounded-2xl text-lg shadow-xl transition transform">
+      게임 시작 🚀
+    </button>
+  </div>
 
-        <!-- Ammo Card 3: Cluster -->
-        <button id="ammo-cluster" class="ammo-card glass-dark border border-slate-600 rounded-xl p-2 sm:p-2.5 flex flex-col items-center gap-1 w-16 sm:w-20 text-center cursor-pointer">
-            <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-purple-600 flex items-center justify-center text-white font-black shadow">
-                <i class="fa-solid fa-burst text-sm"></i>
-            </div>
-            <span class="text-[10px] sm:text-xs font-bold text-slate-200">분열탄</span>
-            <span id="ammo-count-cluster" class="text-[9px] sm:text-[10px] text-purple-400 font-extrabold">2/2</span>
-        </button>
+  <!-- Game Over & Score Submit Modal -->
+  <div id="gameOverModal" class="hidden absolute inset-0 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center z-30 p-4">
+    <div class="bg-slate-900 border border-slate-800 p-6 rounded-3xl w-full max-w-xs text-center shadow-2xl">
+      <h2 class="text-2xl font-black text-red-500 mb-1">GAME OVER</h2>
+      <p class="text-slate-400 text-xs mb-4">비행기가 격추되었습니다!</p>
+      
+      <div class="bg-slate-800/60 rounded-2xl p-4 mb-5 border border-slate-700/50">
+        <span class="text-xs text-slate-400 block font-semibold mb-1">최종 점수</span>
+        <span id="finalScore" class="text-4xl font-black text-amber-400">0</span>
+      </div>
 
-        <!-- Ammo Card 4: Sniper -->
-        <button id="ammo-sniper" class="ammo-card glass-dark border border-slate-600 rounded-xl p-2 sm:p-2.5 flex flex-col items-center gap-1 w-16 sm:w-20 text-center cursor-pointer">
-            <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-cyan-500 flex items-center justify-center text-slate-950 font-black shadow">
-                <i class="fa-solid fa-bolt text-sm"></i>
-            </div>
-            <span class="text-[10px] sm:text-xs font-bold text-slate-200">초음속</span>
-            <span id="ammo-count-sniper" class="text-[9px] sm:text-[10px] text-cyan-400 font-extrabold">2/2</span>
+      <div class="mb-4 text-left">
+        <label class="text-xs text-slate-400 block mb-1 font-bold pl-1">조종사 닉네임</label>
+        <input type="text" id="nicknameInput" maxlength="10" placeholder="닉네임 입력" class="w-full bg-slate-800 border border-slate-700 text-white px-3 py-2.5 rounded-xl focus:outline-none focus:border-amber-500 text-sm">
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <button onclick="submitScoreAndShow()" class="w-full bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 font-bold py-2.5 rounded-xl shadow transition text-sm">
+          점수 등록 & 리더보드 보기
         </button>
+        <button onclick="restartGame()" class="w-full bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 font-bold py-2.5 rounded-xl transition text-sm">
+          다시 도전하기
+        </button>
+      </div>
     </div>
+  </div>
 
-    <!-- Cluster Split Prompt Hint -->
-    <div id="cluster-hint" class="hidden absolute top-28 left-1/2 transform -translate-x-1/2 z-10 pointer-events-none bg-purple-900/90 border border-purple-400 px-4 py-2 rounded-full text-xs sm:text-sm font-bold text-purple-200 shadow-2xl animate-bounce">
-        <i class="fa-solid fa-hand-pointer mr-1"></i> 화면을 터치/클릭하면 3개로 분열합니다!
+  <!-- Leaderboard Modal -->
+  <div id="leaderboardModal" class="hidden absolute inset-0 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center z-40 p-4">
+    <div class="bg-slate-900 border border-slate-800 p-6 rounded-3xl w-full max-w-sm text-center shadow-2xl flex flex-col max-h-[80vh]">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-black text-amber-400 flex items-center gap-2">
+          <span>🏆</span> GLOBAL TOP 10
+        </h2>
+        <button onclick="closeLeaderboard()" class="text-slate-400 hover:text-white text-xl font-bold p-1">✕</button>
+      </div>
+
+      <div class="overflow-y-auto flex-1 my-2 pr-1">
+        <ul id="leaderboardList" class="flex flex-col gap-2 text-sm text-left">
+          <li class="bg-slate-800/50 p-3 rounded-xl text-slate-400 text-center">점수를 불러오는 중...</li>
+        </ul>
+      </div>
+
+      <button onclick="closeLeaderboard()" class="mt-4 w-full bg-slate-800 hover:bg-slate-700 active:scale-95 text-white font-bold py-2.5 rounded-xl transition text-sm">
+        닫기
+      </button>
     </div>
+  </div>
 
-    <!-- Bottom Control Dock / Options -->
-    <div class="absolute bottom-3 left-1/2 transform -translate-x-1/2 z-10 flex gap-3 pointer-events-auto">
-        <button id="btn-toggle-ai" class="glass-dark hover:bg-slate-700 text-white text-xs sm:text-sm px-3 py-1.5 rounded-xl font-bold flex items-center gap-2 border border-slate-600 transition shadow-lg">
-            <i class="fa-solid fa-user-gear"></i> 모드: <span id="mode-text" class="text-amber-400">2P 대전</span>
-        </button>
-        <button id="btn-reset" class="glass-dark hover:bg-slate-700 text-white text-xs sm:text-sm px-3 py-1.5 rounded-xl font-bold flex items-center gap-2 border border-slate-600 transition shadow-lg">
-            <i class="fa-solid fa-rotate-right"></i> 다시 시작
-        </button>
-        <button id="btn-sound" class="glass-dark hover:bg-slate-700 text-white text-xs sm:text-sm px-3 py-1.5 rounded-xl font-bold border border-slate-600 transition shadow-lg">
-            <i id="sound-icon" class="fa-solid fa-volume-high text-emerald-400"></i>
-        </button>
-    </div>
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
 
-    <!-- Floating Damage Container -->
-    <div id="damage-container" class="absolute inset-0 pointer-events-none z-20"></div>
+    // Game Variables
+    let gameState = 'START'; // START, PLAYING, GAMEOVER
+    let score = 0;
+    let frames = 0;
 
-    <!-- Game Over Modal -->
-    <div id="game-over-modal" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-md z-30 flex items-center justify-center p-4">
-        <div class="glass-dark rounded-3xl p-8 max-w-md w-full border-2 border-amber-400 text-center shadow-2xl transform scale-95 transition-all">
-            <div class="text-6xl mb-4" id="winner-emoji">🏆</div>
-            <h2 class="game-font text-3xl sm:text-4xl text-amber-300 mb-2" id="winner-title">플레이어 1 승리!</h2>
-            <p class="text-slate-300 mb-6 font-medium" id="winner-desc">상대방 요새를 완파했습니다.</p>
-            
-            <button id="btn-modal-restart" class="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-lg py-3.5 rounded-2xl shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition">
-                새 게임 시작하기
-            </button>
-        </div>
-    </div>
-</div>
+    // Player Plane
+    const plane = {
+      x: 80,
+      y: 250,
+      width: 34,
+      height: 24,
+      gravity: 0.35,
+      lift: -6.5,
+      velocity: 0,
+      draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        let angle = Math.min(Math.max(this.velocity * 0.05, -0.5), 0.5);
+        ctx.rotate(angle);
 
-<script>
-/**
- * 웹 오디오 API 기반 사운드 합성기 (외부 파일 없이 효과음 생성)
- */
-class SoundEngine {
-    constructor() {
-        this.ctx = null;
-        this.enabled = true;
-    }
+        // Plane Body
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 16, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
 
-    init() {
-        if (!this.ctx) {
-            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        // Wing
+        ctx.fillStyle = '#d97706';
+        ctx.fillRect(-6, -2, 12, 14);
+
+        // Cockpit
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(4, -3, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      },
+      flap() {
+        this.velocity = this.lift;
+      },
+      update() {
+        this.velocity += this.gravity;
+        this.y += this.velocity;
+
+        if (this.y + this.height / 2 >= canvas.height) {
+          this.y = canvas.height - this.height / 2;
+          triggerGameOver();
         }
-    }
-
-    playShoot(type = 'standard') {
-        if (!this.enabled) return;
-        this.init();
-        const now = this.ctx.currentTime;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-
-        let startFreq = 300;
-        let endFreq = 80;
-        let duration = 0.25;
-
-        if (type === 'heavy') {
-            startFreq = 180;
-            endFreq = 40;
-            duration = 0.4;
-        } else if (type === 'sniper') {
-            startFreq = 800;
-            endFreq = 200;
-            duration = 0.15;
-        } else if (type === 'cluster') {
-            startFreq = 450;
-            endFreq = 150;
-            duration = 0.2;
+        if (this.y - this.height / 2 <= 0) {
+          this.y = this.height / 2;
+          this.velocity = 0;
         }
+      },
+      reset() {
+        this.y = 250;
+        this.velocity = 0;
+      }
+    };
 
-        osc.type = type === 'sniper' ? 'sawtooth' : 'sine';
-        osc.frequency.setValueAtTime(startFreq, now);
-        osc.frequency.exponentialRampToValueAtTime(endFreq, now + duration);
+    // Obstacles (Pipes/Towers)
+    const obstacleArray = [];
+    const obstacleWidth = 52;
+    const obstacleGap = 150;
 
-        gain.gain.setValueAtTime(0.4, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
-
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-
-        osc.start(now);
-        osc.stop(now + duration);
-    }
-
-    playExplosion(isHeavy = false) {
-        if (!this.enabled) return;
-        this.init();
-        const now = this.ctx.currentTime;
-        const duration = isHeavy ? 0.7 : 0.4;
-
-        // 노이즈 버퍼 생성
-        const bufferSize = this.ctx.sampleRate * duration;
-        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-        const data = buffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) {
-            data[i] = Math.random() * 2 - 1;
-        }
-
-        const noise = this.ctx.createBufferSource();
-        noise.buffer = buffer;
-
-        const filter = this.ctx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(isHeavy ? 1200 : 800, now);
-        filter.frequency.exponentialRampToValueAtTime(30, now + duration);
-
-        const gain = this.ctx.createGain();
-        gain.gain.setValueAtTime(isHeavy ? 0.8 : 0.6, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
-
-        noise.connect(filter);
-        filter.connect(gain);
-        gain.connect(this.ctx.destination);
-
-        noise.start(now);
-        noise.stop(now + duration);
-    }
-
-    playSplit() {
-        if (!this.enabled) return;
-        this.init();
-        const now = this.ctx.currentTime;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(400, now);
-        osc.frequency.exponentialRampToValueAtTime(1200, now + 0.1);
-
-        gain.gain.setValueAtTime(0.3, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-
-        osc.start(now);
-        osc.stop(now + 0.1);
-    }
-
-    playHit() {
-        if (!this.enabled) return;
-        this.init();
-        const now = this.ctx.currentTime;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(150, now);
-        osc.frequency.exponentialRampToValueAtTime(40, now + 0.15);
-
-        gain.gain.setValueAtTime(0.5, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
-
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-
-        osc.start(now);
-        osc.stop(now + 0.15);
-    }
-}
-
-const sounds = new SoundEngine();
-
-class AngryFortressGame {
-    constructor() {
-        this.canvas = document.getElementById('gameCanvas');
-        this.ctx = this.canvas.getContext('2d');
-        
-        // Game Settings & State
-        this.isAI = false;
-        this.turn = 1; // 1: Player 1, 2: Player 2
-        this.gameState = 'AIMING'; // 'AIMING', 'FLYING', 'RESOLVING', 'GAMEOVER'
-        this.wind = 0; // -5 ~ +5
-        
-        // Ammo Types Configuration
-        this.ammoTypes = {
-            standard: { name: '일반탄', radius: 14, density: 0.015, color: '#f59e0b', explosionRadius: 90, maxDamage: 35, icon: 'fa-circle' },
-            heavy:    { name: '고폭탄', radius: 22, density: 0.035, color: '#ef4444', explosionRadius: 160, maxDamage: 65, icon: 'fa-bomb' },
-            cluster:  { name: '분열탄', radius: 13, density: 0.014, color: '#a855f7', explosionRadius: 80, maxDamage: 30, icon: 'fa-burst' },
-            sniper:   { name: '초음속', radius: 10, density: 0.008, color: '#06b6d4', explosionRadius: 50, maxDamage: 45, icon: 'fa-bolt' }
-        };
-
-        // Player Ammo Inventories
-        this.p1Ammo = { standard: Infinity, heavy: 2, cluster: 2, sniper: 2 };
-        this.p2Ammo = { standard: Infinity, heavy: 2, cluster: 2, sniper: 2 };
-        this.selectedAmmo = 'standard';
-        
-        // Active Projectiles Array (supports multiple projectiles from split)
-        this.activeProjectiles = [];
-        this.hasSplit = false;
-
-        // Players HP
-        this.maxHP = 100;
-        this.p1HP = 100;
-        this.p2HP = 100;
-
-        // Slingshot Aiming Controls
-        this.isDragging = false;
-        this.dragStart = { x: 0, y: 0 };
-        this.dragCurrent = { x: 0, y: 0 };
-        this.maxDragDist = 120;
-
-        this.projectileTimer = 0;
-
-        // Visual Particles & Effects
-        this.particles = [];
-        this.clouds = [];
-
-        // Matter.js Module Aliases
-        this.Engine = Matter.Engine;
-        this.Render = Matter.Render;
-        this.World = Matter.World;
-        this.Bodies = Matter.Bodies;
-        this.Body = Matter.Body;
-        this.Events = Matter.Events;
-        this.Vector = Matter.Vector;
-
-        this.initPhysics();
-        this.resize();
-        this.initClouds();
-        this.setupEventListeners();
-        this.resetGame();
-
-        // Start Loop
-        requestAnimationFrame((t) => this.loop(t));
-    }
-
-    initPhysics() {
-        this.engine = this.Engine.create({
-            gravity: { x: 0, y: 1 }
+    function handleObstacles() {
+      if (frames % 100 === 0) {
+        const topHeight = Math.floor(Math.random() * (canvas.height - obstacleGap - 120)) + 40;
+        obstacleArray.push({
+          x: canvas.width,
+          top: topHeight,
+          bottom: canvas.height - topHeight - obstacleGap,
+          passed: false
         });
-        this.world = this.engine.world;
+      }
 
-        // Collision Event
-        this.Events.on(this.engine, 'collisionStart', (evt) => this.handleCollisions(evt));
-    }
+      for (let i = 0; i < obstacleArray.length; i++) {
+        let obs = obstacleArray[i];
+        obs.x -= 2.5;
 
-    resize() {
-        this.width = window.innerWidth;
-        this.height = window.innerHeight;
-        this.canvas.width = this.width;
-        this.canvas.height = this.height;
+        // Draw Top Tower
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(obs.x, 0, obstacleWidth, obs.top);
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(obs.x - 3, obs.top - 16, obstacleWidth + 6, 16);
 
-        if (this.ground) {
-            this.rebuildWorld();
+        // Draw Bottom Tower
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(obs.x, canvas.height - obs.bottom, obstacleWidth, obs.bottom);
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(obs.x - 3, canvas.height - obs.bottom, obstacleWidth + 6, 16);
+
+        // Collision Check
+        if (
+          plane.x + plane.width / 2 > obs.x &&
+          plane.x - plane.width / 2 < obs.x + obstacleWidth &&
+          (plane.y - plane.height / 2 < obs.top || plane.y + plane.height / 2 > canvas.height - obs.bottom)
+        ) {
+          triggerGameOver();
         }
-    }
 
-    initClouds() {
-        this.clouds = [];
-        for (let i = 0; i < 6; i++) {
-            this.clouds.push({
-                x: Math.random() * this.width,
-                y: Math.random() * (this.height * 0.3) + 30,
-                speed: Math.random() * 0.3 + 0.1,
-                radius: Math.random() * 30 + 20
-            });
+        // Score Update
+        if (obs.x + obstacleWidth < plane.x && !obs.passed) {
+          obs.passed = true;
+          score += 10;
+          document.getElementById('scoreDisplay').innerText = score;
         }
+      }
+
+      while (obstacleArray.length > 0 && obstacleArray[0].x < -obstacleWidth) {
+        obstacleArray.shift();
+      }
     }
 
-    rebuildWorld() {
-        // Clear Existing Physics Bodies
-        this.World.clear(this.world, false);
+    // Input Controls
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        if (gameState === 'PLAYING') plane.flap();
+      }
+    });
 
-        // Ground setup
-        const groundHeight = 120;
-        this.groundY = this.height - groundHeight / 2;
-        this.ground = this.Bodies.rectangle(this.width / 2, this.groundY + 20, this.width * 2, groundHeight, {
-            isStatic: true,
-            label: 'ground',
-            friction: 0.8
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (gameState === 'PLAYING') plane.flap();
+    });
+
+    canvas.addEventListener('mousedown', () => {
+      if (gameState === 'PLAYING') plane.flap();
+    });
+
+    // Game Functions
+    function startGame() {
+      gameState = 'PLAYING';
+      score = 0;
+      frames = 0;
+      obstacleArray.length = 0;
+      plane.reset();
+      document.getElementById('scoreDisplay').innerText = score;
+      document.getElementById('startOverlay').classList.add('hidden');
+      document.getElementById('gameOverModal').classList.add('hidden');
+      loop();
+    }
+
+    function triggerGameOver() {
+      if (gameState === 'GAMEOVER') return;
+      gameState = 'GAMEOVER';
+      document.getElementById('finalScore').innerText = score;
+      document.getElementById('gameOverModal').classList.remove('hidden');
+    }
+
+    function restartGame() {
+      startGame();
+    }
+
+    function loop() {
+      if (gameState !== 'PLAYING') return;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Background Stars FX
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+      for (let i = 0; i < 20; i++) {
+        let sx = (i * 37 + frames * 0.5) % canvas.width;
+        let sy = (i * 97) % canvas.height;
+        ctx.fillRect(sx, sy, 2, 2);
+      }
+
+      handleObstacles();
+      plane.update();
+      plane.draw();
+
+      frames++;
+      requestAnimationFrame(loop);
+    }
+
+    // Firebase Leaderboard Integration Functions
+    async function saveScoreToLeaderboard(nickname, finalScore) {
+      if (!window.db || !window.dbOps) return;
+      try {
+        const { collection, addDoc, serverTimestamp } = window.dbOps;
+        await addDoc(collection(window.db, "flappy_scores"), {
+          nickname: nickname || "익명 조종사",
+          score: Number(finalScore),
+          createdAt: serverTimestamp()
         });
+      } catch (error) {
+        console.error("점수 등록 에러:", error);
+      }
+    }
 
-        // Left & Right Walls
-        this.leftWall = this.Bodies.rectangle(-20, this.height / 2, 40, this.height * 2, { isStatic: true });
-        this.rightWall = this.Bodies.rectangle(this.width + 20, this.height / 2, 40, this.height * 2, { isStatic: true });
+    async function openLeaderboard() {
+      const modal = document.getElementById("leaderboardModal");
+      const listEl = document.getElementById("leaderboardList");
+      modal.classList.remove("hidden");
+      listEl.innerHTML = `<li class="bg-slate-800/50 p-3 rounded-xl text-slate-400 text-center">점수를 불러오는 중...</li>`;
 
-        this.World.add(this.world, [this.ground, this.leftWall, this.rightWall]);
+      try {
+        const { collection, query, orderBy, limit, getDocs } = window.dbOps;
+        const q = query(collection(window.db, "flappy_scores"), orderBy("score", "desc"), limit(10));
+        const querySnapshot = await getDocs(q);
 
-        // Define Slingshot Positions
-        this.p1Sling = { x: Math.max(80, this.width * 0.15), y: this.height - groundHeight - 40 };
-        this.p2Sling = { x: Math.min(this.width - 80, this.width * 0.85), y: this.height - groundHeight - 40 };
+        listEl.innerHTML = "";
+        if (querySnapshot.empty) {
+          listEl.innerHTML = `<li class="bg-slate-800/50 p-3 rounded-xl text-slate-400 text-center">등록된 기록이 없습니다.</li>`;
+          return;
+        }
 
-        // Spawn Characters
-        this.p1Body = this.Bodies.circle(this.p1Sling.x - 30, this.p1Sling.y + 15, 20, {
-            density: 0.005,
-            friction: 0.5,
-            label: 'player1'
+        let rank = 1;
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          const li = document.createElement("li");
+          
+          let medal = rank === 1 ? '🥇 ' : rank === 2 ? '🥈 ' : rank === 3 ? '🥉 ' : `${rank}. `;
+          
+          li.className = "bg-slate-800/80 p-3 rounded-xl border border-slate-700/60 flex justify-between items-center";
+          li.innerHTML = `
+            <div class="flex items-center gap-2">
+              <span class="font-bold ${rank <= 3 ? 'text-amber-400' : 'text-slate-400'}">${medal}</span>
+              <span class="font-semibold text-white">${data.nickname}</span>
+            </div>
+            <span class="font-black text-amber-400">${data.score}점</span>
+          `;
+          listEl.appendChild(li);
+          rank++;
         });
-
-        this.p2Body = this.Bodies.circle(this.p2Sling.x + 30, this.p2Sling.y + 15, 20, {
-            density: 0.005,
-            friction: 0.5,
-            label: 'player2'
-        });
-
-        this.World.add(this.world, [this.p1Body, this.p2Body]);
-
-        // Build Fortresses
-        this.blocks = [];
-        this.buildFortress(this.p1Sling.x + 80, this.height - groundHeight, 'p1');
-        this.buildFortress(this.p2Sling.x - 80, this.height - groundHeight, 'p2');
+      } catch (error) {
+        console.error("리더보드 조회 오류:", error);
+        listEl.innerHTML = `<li class="bg-slate-800/50 p-3 rounded-xl text-red-400 text-center">기록을 불러오지 못했습니다.</li>`;
+      }
     }
 
-    buildFortress(startX, groundTopY, team) {
-        const blockWidth = 24;
-        const blockHeight = 50;
-        const roofWidth = 100;
-        const roofHeight = 20;
-
-        const wallOffset = 35;
-
-        const b1 = this.createBlock(startX - wallOffset, groundTopY - blockHeight / 2, blockWidth, blockHeight, team);
-        const b2 = this.createBlock(startX + wallOffset, groundTopY - blockHeight / 2, blockWidth, blockHeight, team);
-        const r1 = this.createBlock(startX, groundTopY - blockHeight - roofHeight / 2, roofWidth, roofHeight, team);
-
-        const b3 = this.createBlock(startX - wallOffset, groundTopY - blockHeight - roofHeight - blockHeight / 2, blockWidth, blockHeight, team);
-        const b4 = this.createBlock(startX + wallOffset, groundTopY - blockHeight - roofHeight - blockHeight / 2, blockWidth, blockHeight, team);
-        const r2 = this.createBlock(startX, groundTopY - blockHeight * 2 - roofHeight * 1.5, roofWidth, roofHeight, team);
-
-        const core = this.createBlock(startX, groundTopY - blockHeight / 2, 28, 28, team, true);
-
-        const newBlocks = [b1, b2, r1, b3, b4, r2, core];
-        this.blocks.push(...newBlocks);
-        this.World.add(this.world, newBlocks);
+    async function submitScoreAndShow() {
+      const nickname = document.getElementById('nicknameInput').value.trim() || '익명';
+      await saveScoreToLeaderboard(nickname, score);
+      document.getElementById('gameOverModal').classList.add('hidden');
+      openLeaderboard();
     }
 
-    createBlock(x, y, w, h, team, isCore = false) {
-        return this.Bodies.rectangle(x, y, w, h, {
-            density: 0.002,
-            friction: 0.6,
-            restitution: 0.1,
-            label: 'block',
-            customData: {
-                team: team,
-                maxHp: isCore ? 60 : 40,
-                hp: isCore ? 60 : 40,
-                width: w,
-                height: h,
-                isCore: isCore
-            }
-        });
+    function closeLeaderboard() {
+      document.getElementById("leaderboardModal").classList.add("hidden");
     }
 
-    resetGame() {
-        this.p1HP = this.maxHP;
-        this.p2HP = this.maxHP;
-        this.turn = 1;
-        this.gameState = 'AIMING';
-        this.activeProjectiles = [];
-        this.hasSplit = false;
-        this.particles = [];
-
-        // Reset Ammos
-        this.p1Ammo = { standard: Infinity, heavy: 2, cluster: 2, sniper: 2 };
-        this.p2Ammo = { standard: Infinity, heavy: 2, cluster: 2, sniper: 2 };
-        this.selectedAmmo = 'standard';
-
-        this.updateWind();
-        this.rebuildWorld();
-        this.updateUI();
-
-        document.getElementById('game-over-modal').classList.add('hidden');
-        document.getElementById('cluster-hint').classList.add('hidden');
-    }
-
-    updateWind() {
-        this.wind = (Math.random() * 10 - 5);
-        this.engine.world.gravity.x = this.wind * 0.05;
-
-        const arrow = document.getElementById('wind-arrow');
-        const speedText = document.getElementById('wind-speed');
-        const absWind = Math.abs(this.wind).toFixed(1);
-
-        speedText.innerText = `${absWind} m/s`;
-        if (this.wind < -0.2) {
-            arrow.style.transform = 'rotate(180deg)';
-            arrow.className = 'fa-solid fa-arrow-right text-cyan-400 transition-transform duration-500';
-        } else if (this.wind > 0.2) {
-            arrow.style.transform = 'rotate(0deg)';
-            arrow.className = 'fa-solid fa-arrow-right text-amber-400 transition-transform duration-500';
-        } else {
-            arrow.style.transform = 'rotate(-90deg)';
-            arrow.className = 'fa-solid fa-arrow-right text-slate-400 transition-transform duration-500';
-        }
-    }
-
-    setupEventListeners() {
-        window.addEventListener('resize', () => this.resize());
-
-        const getCanvasPos = (e) => {
-            const rect = this.canvas.getBoundingClientRect();
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            return {
-                x: clientX - rect.left,
-                y: clientY - rect.top
-            };
-        };
-
-        const onStart = (e) => {
-            // Check Mid-Air Split Action for Cluster Bomb
-            if (this.gameState === 'FLYING' && this.selectedAmmo === 'cluster' && !this.hasSplit) {
-                this.splitClusterProjectile();
-                return;
-            }
-
-            if (this.gameState !== 'AIMING') return;
-            if (this.isAI && this.turn === 2) return;
-
-            const pos = getCanvasPos(e);
-            const activeSling = this.turn === 1 ? this.p1Sling : this.p2Sling;
-
-            const dist = Math.hypot(pos.x - activeSling.x, pos.y - activeSling.y);
-            if (dist < 80) {
-                this.isDragging = true;
-                this.dragStart = { ...activeSling };
-                this.dragCurrent = { ...pos };
-            }
-        };
-
-        const onMove = (e) => {
-            if (!this.isDragging) return;
-            const pos = getCanvasPos(e);
-            const dx = pos.x - this.dragStart.x;
-            const dy = pos.y - this.dragStart.y;
-            const dist = Math.hypot(dx, dy);
-
-            if (dist > this.maxDragDist) {
-                const angle = Math.atan2(dy, dx);
-                this.dragCurrent = {
-                    x: this.dragStart.x + Math.cos(angle) * this.maxDragDist,
-                    y: this.dragStart.y + Math.sin(angle) * this.maxDragDist
-                };
-            } else {
-                this.dragCurrent = { ...pos };
-            }
-        };
-
-        const onEnd = () => {
-            if (!this.isDragging) return;
-            this.isDragging = false;
-
-            const dx = this.dragStart.x - this.dragCurrent.x;
-            const dy = this.dragStart.y - this.dragCurrent.y;
-            const dist = Math.hypot(dx, dy);
-
-            if (dist > 15) {
-                let powerMultiplier = 0.22;
-                if (this.selectedAmmo === 'sniper') powerMultiplier = 0.35; // Sniper shoots faster
-                if (this.selectedAmmo === 'heavy') powerMultiplier = 0.18;  // Heavy bomb is slower
-
-                const forceX = dx * powerMultiplier;
-                const forceY = dy * powerMultiplier;
-
-                this.launchProjectile(this.dragStart.x, this.dragStart.y, forceX, forceY);
-            }
-        };
-
-        this.canvas.addEventListener('mousedown', onStart);
-        this.canvas.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onEnd);
-
-        this.canvas.addEventListener('touchstart', onStart, { passive: true });
-        this.canvas.addEventListener('touchmove', onMove, { passive: true });
-        window.addEventListener('touchend', onEnd);
-
-        // Ammo Selector Buttons Event Handlers
-        ['standard', 'heavy', 'cluster', 'sniper'].forEach(type => {
-            document.getElementById(`ammo-${type}`).addEventListener('click', () => {
-                if (this.gameState !== 'AIMING') return;
-                const inv = this.turn === 1 ? this.p1Ammo : this.p2Ammo;
-                if (inv[type] <= 0) return;
-
-                this.selectedAmmo = type;
-                this.updateUI();
-            });
-        });
-
-        // UI Buttons
-        document.getElementById('btn-reset').addEventListener('click', () => this.resetGame());
-        document.getElementById('btn-modal-restart').addEventListener('click', () => this.resetGame());
-
-        document.getElementById('btn-toggle-ai').addEventListener('click', () => {
-            this.isAI = !this.isAI;
-            document.getElementById('mode-text').innerText = this.isAI ? 'VS 컴퓨터(AI)' : '2P 대전';
-            document.getElementById('p2-name').innerText = this.isAI ? 'AI 로봇' : 'P2 블루팀';
-            this.resetGame();
-        });
-
-        document.getElementById('btn-sound').addEventListener('click', () => {
-            sounds.enabled = !sounds.enabled;
-            const icon = document.getElementById('sound-icon');
-            if (sounds.enabled) {
-                icon.className = 'fa-solid fa-volume-high text-emerald-400';
-            } else {
-                icon.className = 'fa-solid fa-volume-xmark text-slate-400';
-            }
-        });
-    }
-
-    launchProjectile(x, y, vx, vy) {
-        this.gameState = 'FLYING';
-        this.hasSplit = false;
-
-        // Deduct Ammo
-        const currentInv = this.turn === 1 ? this.p1Ammo : this.p2Ammo;
-        if (this.selectedAmmo !== 'standard') {
-            currentInv[this.selectedAmmo]--;
-        }
-
-        sounds.playShoot(this.selectedAmmo);
-
-        const config = this.ammoTypes[this.selectedAmmo];
-        const proj = this.Bodies.circle(x, y, config.radius, {
-            density: config.density,
-            friction: 0.1,
-            restitution: this.selectedAmmo === 'sniper' ? 0.1 : 0.4,
-            label: 'projectile',
-            customData: {
-                type: this.selectedAmmo,
-                config: config
-            }
-        });
-
-        this.activeProjectiles = [proj];
-        this.World.add(this.world, proj);
-        this.Body.setVelocity(proj, { x: vx, y: vy });
-
-        this.projectileTimer = 0;
-
-        if (this.selectedAmmo === 'cluster') {
-            document.getElementById('cluster-hint').classList.remove('hidden');
-        }
-
-        this.updateUI();
-    }
-
-    splitClusterProjectile() {
-        if (this.hasSplit || this.activeProjectiles.length === 0) return;
-        const parent = this.activeProjectiles[0];
-        if (!parent || !parent.position) return;
-
-        this.hasSplit = true;
-        document.getElementById('cluster-hint').classList.add('hidden');
-        sounds.playSplit();
-
-        const pos = parent.position;
-        const vel = parent.velocity;
-
-        // Remove Parent
-        this.World.remove(this.world, parent);
-        this.activeProjectiles = [];
-
-        // Spawn 3 Mini Projectiles
-        const config = this.ammoTypes.cluster;
-        const angles = [-0.25, 0, 0.25];
-
-        angles.forEach(angleOffset => {
-            const mini = this.Bodies.circle(pos.x, pos.y, config.radius * 0.75, {
-                density: config.density,
-                friction: 0.1,
-                restitution: 0.4,
-                label: 'projectile',
-                customData: {
-                    type: 'cluster',
-                    config: config
-                }
-            });
-
-            // Calculate angled velocity
-            const speed = Math.hypot(vel.x, vel.y);
-            const currentAngle = Math.atan2(vel.y, vel.x) + angleOffset;
-
-            this.activeProjectiles.push(mini);
-            this.World.add(this.world, mini);
-            this.Body.setVelocity(mini, {
-                x: Math.cos(currentAngle) * speed * 1.1,
-                y: Math.sin(currentAngle) * speed * 1.1
-            });
-        });
-
-        this.createExplosionParticles(pos.x, pos.y, '#a855f7', 15);
-    }
-
-    handleCollisions(event) {
-        if (this.gameState !== 'FLYING' && this.gameState !== 'RESOLVING') return;
-
-        const pairs = event.pairs;
-        for (let pair of pairs) {
-            const { bodyA, bodyB } = pair;
-
-            const speedA = Math.hypot(bodyA.velocity.x, bodyA.velocity.y);
-            const speedB = Math.hypot(bodyB.velocity.x, bodyB.velocity.y);
-            const relativeSpeed = Math.abs(speedA - speedB);
-
-            // Projectile Hits
-            if (bodyA.label === 'projectile' || bodyB.label === 'projectile') {
-                const proj = bodyA.label === 'projectile' ? bodyA : bodyB;
-                const target = bodyA === proj ? bodyB : bodyA;
-
-                if (relativeSpeed > 2.0 && proj.customData) {
-                    const cfg = proj.customData.config;
-                    const isHeavy = proj.customData.type === 'heavy';
-
-                    sounds.playExplosion(isHeavy);
-                    this.createExplosionParticles(proj.position.x, proj.position.y, cfg.color, isHeavy ? 45 : 25);
-                    this.applyRadiusDamage(proj.position, cfg.explosionRadius, cfg.maxDamage);
-                }
-            }
-
-            this.checkDamageOnBody(bodyA, relativeSpeed);
-            this.checkDamageOnBody(bodyB, relativeSpeed);
-        }
-    }
-
-    checkDamageOnBody(body, speed) {
-        if (speed < 3.0) return;
-
-        let damage = Math.floor(speed * 3.5);
-
-        if (body.label === 'player1') {
-            this.takeDamage(1, damage, body.position);
-        } else if (body.label === 'player2') {
-            this.takeDamage(2, damage, body.position);
-        } else if (body.label === 'block' && body.customData) {
-            body.customData.hp -= damage;
-            sounds.playHit();
-            this.showDamageText(body.position.x, body.position.y - 20, damage, '#f59e0b');
-
-            if (body.customData.hp <= 0) {
-                this.createDebrisParticles(body.position.x, body.position.y, body.customData.width);
-                this.World.remove(this.world, body);
-                const index = this.blocks.indexOf(body);
-                if (index > -1) this.blocks.splice(index, 1);
-            }
-        }
-    }
-
-    applyRadiusDamage(pos, radius, maxDamage) {
-        // Players Splash Damage
-        [this.p1Body, this.p2Body].forEach((p, idx) => {
-            if (!p) return;
-            const dist = Math.hypot(p.position.x - pos.x, p.position.y - pos.y);
-            if (dist < radius) {
-                const dmg = Math.floor((1 - dist / radius) * maxDamage);
-                if (dmg > 0) {
-                    this.takeDamage(idx + 1, dmg, p.position);
-                }
-            }
-        });
-
-        // Blocks Splash Damage
-        this.blocks.forEach(block => {
-            const dist = Math.hypot(block.position.x - pos.x, block.position.y - pos.y);
-            if (dist < radius) {
-                const dmg = Math.floor((1 - dist / radius) * maxDamage);
-                if (dmg > 0 && block.customData) {
-                    block.customData.hp -= dmg;
-                    if (block.customData.hp <= 0) {
-                        this.createDebrisParticles(block.position.x, block.position.y, block.customData.width);
-                        this.World.remove(this.world, block);
-                    }
-                }
-            }
-        });
-
-        this.blocks = this.blocks.filter(b => !b.customData || b.customData.hp > 0);
-    }
-
-    takeDamage(playerNum, amount, pos) {
-        if (amount <= 0) return;
-
-        if (playerNum === 1) {
-            this.p1HP = Math.max(0, this.p1HP - amount);
-        } else {
-            this.p2HP = Math.max(0, this.p2HP - amount);
-        }
-
-        sounds.playHit();
-        this.showDamageText(pos.x, pos.y - 30, amount, playerNum === 1 ? '#ef4444' : '#3b82f6');
-        this.updateUI();
-
-        if (this.p1HP <= 0 || this.p2HP <= 0) {
-            this.triggerGameOver(this.p1HP <= 0 ? 2 : 1);
-        }
-    }
-
-    showDamageText(x, y, text, color) {
-        const el = document.createElement('div');
-        el.className = 'damage-text';
-        el.style.left = `${x}px`;
-        el.style.top = `${y}px`;
-        el.style.color = color;
-        el.innerText = `-${text}`;
-        document.getElementById('damage-container').appendChild(el);
-
-        setTimeout(() => el.remove(), 1200);
-    }
-
-    switchTurn() {
-        if (this.gameState === 'GAMEOVER') return;
-
-        document.getElementById('cluster-hint').classList.add('hidden');
-
-        // Clean Active Projectiles
-        this.activeProjectiles.forEach(p => this.World.remove(this.world, p));
-        this.activeProjectiles = [];
-
-        this.turn = this.turn === 1 ? 2 : 1;
-        this.gameState = 'AIMING';
-
-        // Auto Select Available Ammo
-        const currentInv = this.turn === 1 ? this.p1Ammo : this.p2Ammo;
-        if (currentInv[this.selectedAmmo] <= 0) {
-            this.selectedAmmo = 'standard';
-        }
-
-        this.updateWind();
-        this.updateUI();
-
-        if (this.isAI && this.turn === 2 && this.gameState !== 'GAMEOVER') {
-            setTimeout(() => this.executeAITurn(), 1000);
-        }
-    }
-
-    executeAITurn() {
-        if (this.gameState !== 'AIMING' || this.turn !== 2) return;
-
-        // Intelligent AI Ammo Selection
-        if (this.p2Ammo.heavy > 0 && Math.random() < 0.6) {
-            this.selectedAmmo = 'heavy';
-        } else if (this.p2Ammo.sniper > 0 && Math.abs(this.wind) < 1.5) {
-            this.selectedAmmo = 'sniper';
-        } else if (this.p2Ammo.cluster > 0) {
-            this.selectedAmmo = 'cluster';
-        } else {
-            this.selectedAmmo = 'standard';
-        }
-
-        this.updateUI();
-
-        const startX = this.p2Sling.x;
-        const startY = this.p2Sling.y;
-        const targetX = this.p1Body.position.x;
-        const targetY = this.p1Body.position.y;
-
-        const dx = targetX - startX;
-        const dy = targetY - startY;
-
-        let mult = 0.18;
-        if (this.selectedAmmo === 'sniper') mult = 0.28;
-        if (this.selectedAmmo === 'heavy') mult = 0.15;
-
-        let forceX = dx * mult - this.wind * 1.5;
-        let forceY = -Math.abs(dx) * (mult * 1.2) + (dy * 0.05);
-
-        forceX += (Math.random() - 0.5) * 2.0;
-        forceY += (Math.random() - 0.5) * 2.0;
-
-        this.isDragging = true;
-        this.dragStart = { ...this.p2Sling };
-        this.dragCurrent = {
-            x: this.p2Sling.x - forceX * 4,
-            y: this.p2Sling.y - forceY * 4
-        };
-
-        setTimeout(() => {
-            this.isDragging = false;
-            this.launchProjectile(startX, startY, forceX, forceY);
-
-            // AI Mid-Air Split Chance for Cluster Ammo
-            if (this.selectedAmmo === 'cluster') {
-                setTimeout(() => {
-                    if (this.gameState === 'FLYING' && !this.hasSplit) {
-                        this.splitClusterProjectile();
-                    }
-                }, 700);
-            }
-        }, 800);
-    }
-
-    updateUI() {
-        const p1Pct = Math.max(0, (this.p1HP / this.maxHP) * 100);
-        const p2Pct = Math.max(0, (this.p2HP / this.maxHP) * 100);
-
-        document.getElementById('p1-hp-bar').style.width = `${p1Pct}%`;
-        document.getElementById('p2-hp-bar').style.width = `${p2Pct}%`;
-
-        document.getElementById('p1-hp-text').innerText = `${Math.ceil(this.p1HP)} / ${this.maxHP}`;
-        document.getElementById('p2-hp-text').innerText = `${Math.ceil(this.p2HP)} / ${this.maxHP}`;
-
-        const turnDot = document.getElementById('turn-dot');
-        const turnText = document.getElementById('turn-text');
-
-        if (this.turn === 1) {
-            turnDot.className = 'w-3.5 h-3.5 rounded-full bg-red-500 animate-pulse';
-            turnText.innerText = 'P1 공격 턴!';
-            turnText.className = 'game-font text-lg sm:text-2xl text-red-400 tracking-wider';
-        } else {
-            turnDot.className = 'w-3.5 h-3.5 rounded-full bg-blue-500 animate-pulse';
-            turnText.innerText = this.isAI ? 'AI 계산 중...' : 'P2 공격 턴!';
-            turnText.className = 'game-font text-lg sm:text-2xl text-blue-400 tracking-wider';
-        }
-
-        // Update Ammo Counts & UI State
-        const currentInv = this.turn === 1 ? this.p1Ammo : this.p2Ammo;
-
-        ['heavy', 'cluster', 'sniper'].forEach(type => {
-            const countEl = document.getElementById(`ammo-count-${type}`);
-            if (countEl) {
-                countEl.innerText = `${currentInv[type]}/2`;
-            }
-        });
-
-        ['standard', 'heavy', 'cluster', 'sniper'].forEach(type => {
-            const btn = document.getElementById(`ammo-${type}`);
-            if (!btn) return;
-
-            if (this.selectedAmmo === type) {
-                btn.classList.add('selected');
-            } else {
-                btn.classList.remove('selected');
-            }
-
-            if (currentInv[type] <= 0) {
-                btn.classList.add('disabled');
-            } else {
-                btn.classList.remove('disabled');
-            }
-        });
-    }
-
-    triggerGameOver(winner) {
-        this.gameState = 'GAMEOVER';
-
-        const modal = document.getElementById('game-over-modal');
-        const title = document.getElementById('winner-title');
-        const desc = document.getElementById('winner-desc');
-        const emoji = document.getElementById('winner-emoji');
-
-        modal.classList.remove('hidden');
-
-        if (winner === 1) {
-            emoji.innerText = '🏆';
-            title.innerText = 'P1 레드팀 승리!';
-            title.className = 'game-font text-3xl sm:text-4xl text-red-400 mb-2';
-            desc.innerText = '상대 요새를 전멸시키고 승리하였습니다!';
-        } else {
-            emoji.innerText = this.isAI ? '🤖' : '🏆';
-            title.innerText = this.isAI ? 'AI 승리!' : 'P2 블루팀 승리!';
-            title.className = 'game-font text-3xl sm:text-4xl text-blue-400 mb-2';
-            desc.innerText = '요새가 파괴되었습니다. 다시 도전해보세요!';
-        }
-    }
-
-    loop(timestamp) {
-        this.Engine.update(this.engine, 1000 / 60);
-
-        if (this.gameState === 'FLYING' && this.activeProjectiles.length > 0) {
-            this.projectileTimer++;
-
-            let allStoppedOrOut = true;
-
-            this.activeProjectiles.forEach(proj => {
-                const pos = proj.position;
-                const vel = proj.velocity;
-                const speed = Math.hypot(vel.x, vel.y);
-
-                if (this.projectileTimer % 2 === 0) {
-                    const cfg = proj.customData ? proj.customData.config : this.ammoTypes.standard;
-                    this.particles.push({
-                        x: pos.x,
-                        y: pos.y,
-                        vx: (Math.random() - 0.5) * 0.5,
-                        vy: (Math.random() - 0.5) * 0.5,
-                        radius: Math.random() * 4 + 2,
-                        color: cfg.color,
-                        life: 0.8
-                    });
-                }
-
-                if (speed >= 0.2 && pos.y <= this.height + 100 && pos.x >= -100 && pos.x <= this.width + 100) {
-                    allStoppedOrOut = false;
-                }
-            });
-
-            if ((allStoppedOrOut && this.projectileTimer > 40) || this.projectileTimer > 360) {
-                this.gameState = 'RESOLVING';
-                setTimeout(() => this.switchTurn(), 600);
-            }
-        }
-
-        this.render();
-        requestAnimationFrame((t) => this.loop(t));
-    }
-
-    render() {
-        // Clear Sky Background Gradient
-        const skyGradient = this.ctx.createLinearGradient(0, 0, 0, this.height);
-        skyGradient.addColorStop(0, '#0f172a');
-        skyGradient.addColorStop(0.6, '#1e293b');
-        skyGradient.addColorStop(1, '#334155');
-        this.ctx.fillStyle = skyGradient;
-        this.ctx.fillRect(0, 0, this.width, this.height);
-
-        this.renderClouds();
-
-        // Render Ground
-        this.ctx.fillStyle = '#15803d';
-        this.ctx.fillRect(0, this.groundY - 20, this.width, this.height - this.groundY + 20);
-        this.ctx.fillStyle = '#166534';
-        this.ctx.fillRect(0, this.groundY - 10, this.width, 10);
-
-        // Render Slingshots
-        this.renderSlingshot(this.p1Sling, '#ef4444');
-        this.renderSlingshot(this.p2Sling, '#3b82f6');
-
-        // Render Fortress Blocks
-        this.blocks.forEach(block => this.renderBlock(block));
-
-        // Render Players
-        this.renderPlayer(this.p1Body, '#ef4444', '😡');
-        this.renderPlayer(this.p2Body, '#3b82f6', this.isAI ? '🤖' : '😈');
-
-        // Render Trajectory Prediction Line
-        if (this.isDragging && this.gameState === 'AIMING') {
-            this.renderTrajectory();
-        }
-
-        // Render Active Projectiles
-        this.activeProjectiles.forEach(proj => {
-            const cfg = proj.customData ? proj.customData.config : this.ammoTypes.standard;
-            this.ctx.save();
-            this.ctx.beginPath();
-            this.ctx.arc(proj.position.x, proj.position.y, cfg.radius, 0, Math.PI * 2);
-            this.ctx.fillStyle = cfg.color;
-            this.ctx.shadowColor = cfg.color;
-            this.ctx.shadowBlur = 12;
-            this.ctx.fill();
-            this.ctx.lineWidth = 2;
-            this.ctx.strokeStyle = '#ffffff';
-            this.ctx.stroke();
-            this.ctx.restore();
-        });
-
-        this.renderParticles();
-    }
-
-    renderClouds() {
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-        this.clouds.forEach(c => {
-            c.x += c.speed;
-            if (c.x - c.radius > this.width) c.x = -c.radius;
-
-            this.ctx.beginPath();
-            this.ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
-            this.ctx.arc(c.x + c.radius * 0.7, c.y - c.radius * 0.2, c.radius * 0.8, 0, Math.PI * 2);
-            this.ctx.arc(c.x - c.radius * 0.7, c.y - c.radius * 0.2, c.radius * 0.7, 0, Math.PI * 2);
-            this.ctx.fill();
-        });
-    }
-
-    renderSlingshot(sling, color) {
-        this.ctx.strokeStyle = color;
-        this.ctx.lineWidth = 6;
-        this.ctx.lineCap = 'round';
-
-        this.ctx.beginPath();
-        this.ctx.moveTo(sling.x, sling.y + 40);
-        this.ctx.lineTo(sling.x, sling.y);
-        this.ctx.lineTo(sling.x - 12, sling.y - 20);
-        this.ctx.moveTo(sling.x, sling.y);
-        this.ctx.lineTo(sling.x + 12, sling.y - 20);
-        this.ctx.stroke();
-
-        if (this.isDragging && this.dragStart.x === sling.x) {
-            this.ctx.strokeStyle = '#d97706';
-            this.ctx.lineWidth = 4;
-            this.ctx.beginPath();
-            this.ctx.moveTo(sling.x - 12, sling.y - 20);
-            this.ctx.lineTo(this.dragCurrent.x, this.dragCurrent.y);
-            this.ctx.lineTo(sling.x + 12, sling.y - 20);
-            this.ctx.stroke();
-        }
-    }
-
-    renderBlock(block) {
-        if (!block.customData) return;
-
-        const pos = block.position;
-        const angle = block.angle;
-        const { width, height, hp, maxHp, isCore } = block.customData;
-        const hpRatio = Math.max(0, hp / maxHp);
-
-        this.ctx.save();
-        this.ctx.translate(pos.x, pos.y);
-        this.ctx.rotate(angle);
-
-        this.ctx.fillStyle = isCore ? `rgba(234, 179, 8, ${0.4 + hpRatio * 0.6})` : `rgba(148, 163, 184, ${0.3 + hpRatio * 0.7})`;
-        this.ctx.strokeStyle = isCore ? '#ca8a04' : '#475569';
-        this.ctx.lineWidth = 2;
-
-        this.ctx.beginPath();
-        this.ctx.roundRect(-width / 2, -height / 2, width, height, 4);
-        this.ctx.fill();
-        this.ctx.stroke();
-
-        if (hpRatio < 0.7) {
-            this.ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-            this.ctx.beginPath();
-            this.ctx.moveTo(-width / 4, -height / 4);
-            this.ctx.lineTo(width / 4, height / 4);
-            this.ctx.stroke();
-        }
-
-        this.ctx.restore();
-    }
-
-    renderPlayer(body, color, emoji) {
-        if (!body) return;
-        const pos = body.position;
-
-        this.ctx.save();
-        this.ctx.translate(pos.x, pos.y);
-
-        this.ctx.beginPath();
-        this.ctx.arc(0, 0, 20, 0, Math.PI * 2);
-        this.ctx.fillStyle = color;
-        this.ctx.fill();
-        this.ctx.lineWidth = 3;
-        this.ctx.strokeStyle = '#ffffff';
-        this.ctx.stroke();
-
-        this.ctx.font = '20px sans-serif';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        this.ctx.fillText(emoji, 0, 2);
-
-        this.ctx.restore();
-    }
-
-    renderTrajectory() {
-        const dx = this.dragStart.x - this.dragCurrent.x;
-        const dy = this.dragStart.y - this.dragCurrent.y;
-
-        let powerMultiplier = 0.22;
-        if (this.selectedAmmo === 'sniper') powerMultiplier = 0.35;
-        if (this.selectedAmmo === 'heavy') powerMultiplier = 0.18;
-
-        let vx = dx * powerMultiplier;
-        let vy = dy * powerMultiplier;
-        let px = this.dragStart.x;
-        let py = this.dragStart.y;
-
-        const gravity = this.engine.world.gravity.y;
-        const windAccel = this.wind * 0.05;
-
-        this.ctx.save();
-        this.ctx.fillStyle = this.ammoTypes[this.selectedAmmo].color;
-
-        for (let i = 0; i < 25; i++) {
-            px += vx;
-            py += vy;
-            vy += gravity * 0.5;
-            vx += windAccel * 0.5;
-
-            this.ctx.beginPath();
-            this.ctx.arc(px, py, 4 - (i * 0.12), 0, Math.PI * 2);
-            this.ctx.fill();
-
-            if (py > this.groundY - 10) break;
-        }
-
-        this.ctx.restore();
-    }
-
-    createExplosionParticles(x, y, color = '#f97316', count = 25) {
-        for (let i = 0; i < count; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = Math.random() * 8 + 2;
-            this.particles.push({
-                x: x,
-                y: y,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                radius: Math.random() * 5 + 3,
-                color: color,
-                life: 1.0
-            });
-        }
-    }
-
-    createDebrisParticles(x, y, size) {
-        for (let i = 0; i < 8; i++) {
-            this.particles.push({
-                x: x + (Math.random() - 0.5) * size,
-                y: y + (Math.random() - 0.5) * size,
-                vx: (Math.random() - 0.5) * 4,
-                vy: (Math.random() - 0.5) * 4,
-                radius: Math.random() * 4 + 2,
-                color: '#94a3b8',
-                life: 0.8
-            });
-        }
-    }
-
-    renderParticles() {
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-            const p = this.particles[i];
-            p.x += p.vx;
-            p.y += p.vy;
-            p.life -= 0.025;
-
-            if (p.life <= 0) {
-                this.particles.splice(i, 1);
-                continue;
-            }
-
-            this.ctx.save();
-            this.ctx.globalAlpha = p.life;
-            this.ctx.fillStyle = p.color;
-            this.ctx.beginPath();
-            this.ctx.arc(p.x, p.y, Math.max(0.1, p.radius * p.life), 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.restore();
-        }
-    }
-}
-
-// Initialize Game On Page Load
-window.onload = () => {
-    window.game = new AngryFortressGame();
-};
-</script>
+    // Canvas Background Initial Render
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  </script>
 </body>
 </html>
