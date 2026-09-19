@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>앵그리 캐논: 턴제 맞대결 (Angry Fortress)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Matter.js Physics Engine CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Noto+Sans+KR:wght@400;700;900&display=swap');
+        
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            touch-action: none;
+            user-select: none;
+            overflow: hidden;
+            background: #1a202c;
+        }
+
+        .game-font {
+            font-family: 'Fredoka One', 'Noto Sans KR', cursive;
+        }
+
+        /* custom canvas container overlay styles */
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Floating Damage Text */
+        .damage-text {
+            position: absolute;
+            font-family: 'Fredoka One', sans-serif;
+            font-weight: 900;
+            font-size: 24px;
+            pointer-events: none;
+            animation: floatUpAndFade 1.2s ease-out forwards;
+            text-shadow: 2px 2px 0px #000, -2px -2px 0px #000, 2px -2px 0px #000, -2px 2px 0px #000;
+        }
+
+        @keyframes floatUpAndFade {
+            0% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+            50% {
+                transform: translateY(-30px) scale(1.3);
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-60px) scale(0.9);
+            }
+        }
+
+        /* Glassmorphism UI */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+        }
+
+        .glass-dark {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-white select-none">
+
+<div id="game-container">
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Top HUD Bar -->
+    <div class="absolute top-0 left-0 w-full p-3 sm:p-5 flex justify-between items-start pointer-events-none z-10">
+        <!-- Player 1 Status (Left) -->
+        <div class="glass-dark rounded-2xl p-3 sm:p-4 w-40 sm:w-64 border-l-4 border-red-500 shadow-xl pointer-events-auto transition-all transform hover:scale-105">
+            <div class="flex justify-between items-center mb-1">
+                <span class="game-font text-red-400 text-base sm:text-xl font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-crown"></i> P1 레드팀
+                </span>
+                <span id="p1-hp-text" class="text-xs sm:text-sm font-black text-red-200">100 / 100</span>
+            </div>
+            <!-- HP Bar Outer -->
+            <div class="w-full bg-slate-800 h-3 sm:h-5 rounded-full overflow-hidden p-0.5 border border-slate-600">
+                <div id="p1-hp-bar" class="h-full bg-gradient-to-r from-red-600 to-amber-500 rounded-full transition-all duration-300" style="width: 100%;"></div>
+            </div>
+        </div>
+
+        <!-- Center Match Info (Wind, Turn Indicator) -->
+        <div class="flex flex-col items-center gap-2 pointer-events-auto">
+            <!-- Turn Indicator Banner -->
+            <div id="turn-banner" class="glass-dark px-6 py-2 rounded-full border-2 border-amber-400 shadow-2xl flex items-center gap-3">
+                <div id="turn-dot" class="w-3.5 h-3.5 rounded-full bg-red-500 animate-pulse"></div>
+                <span id="turn-text" class="game-font text-lg sm:text-2xl text-amber-300 tracking-wider">P1 공격 턴!</span>
+            </div>
+
+            <!-- Wind Indicator -->
+            <div class="glass-dark px-4 py-1.5 rounded-xl border border-slate-700 flex items-center gap-2 text-xs sm:text-sm">
+                <span class="text-slate-400 font-bold"><i class="fa-solid fa-wind"></i> 바람:</span>
+                <div class="flex items-center gap-1 font-extrabold" id="wind-container">
+                    <i id="wind-arrow" class="fa-solid fa-arrow-right text-amber-400 transition-transform duration-500"></i>
+                    <span id="wind-speed" class="text-white">0 m/s</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Player 2 Status (Right) -->
+        <div class="glass-dark rounded-2xl p-3 sm:p-4 w-40 sm:w-64 border-r-4 border-blue-500 shadow-xl pointer-events-auto text-right transition-all transform hover:scale-105">
+            <div class="flex justify-between items-center mb-1 flex-row-reverse">
+                <span class="game-font text-blue-400 text-base sm:text-xl font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-robot" id="p2-icon"></i> <span id="p2-name">P2 블루팀</span>
+                </span>
+                <span id="p2-hp-text" class="text-xs sm:text-sm font-black text-blue-200">100 / 100</span>
+            </div>
+            <!-- HP Bar Outer -->
+            <div class="w-full bg-slate-800 h-3 sm:h-5 rounded-full overflow-hidden p-0.5 border border-slate-600 flex justify-end">
+                <div id="p2-hp-bar" class="h-full bg-gradient-to-l from-blue-600 to-cyan-400 rounded-full transition-all duration-300" style="width: 100%;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Control Dock / Options -->
+    <div class="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10 flex gap-3 pointer-events-auto">
+        <button id="btn-toggle-ai" class="glass-dark hover:bg-slate-700 text-white text-xs sm:text-sm px-4 py-2 rounded-xl font-bold flex items-center gap-2 border border-slate-600 transition shadow-lg">
+            <i class="fa-solid fa-user-gear"></i> 모드: <span id="mode-text" class="text-amber-400">2P 대전</span>
+        </button>
+        <button id="btn-reset" class="glass-dark hover:bg-slate-700 text-white text-xs sm:text-sm px-4 py-2 rounded-xl font-bold flex items-center gap-2 border border-slate-600 transition shadow-lg">
+            <i class="fa-solid fa-rotate-right"></i> 다시 시작
+        </button>
+        <button id="btn-sound" class="glass-dark hover:bg-slate-700 text-white text-xs sm:text-sm px-3 py-2 rounded-xl font-bold border border-slate-600 transition shadow-lg">
+            <i id="sound-icon" class="fa-solid fa-volume-high text-emerald-400"></i>
+        </button>
+    </div>
+
+    <!-- Floating Damage Container -->
+    <div id="damage-container" class="absolute inset-0 pointer-events-none z-20"></div>
+
+    <!-- Game Over Modal -->
+    <div id="game-over-modal" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-md z-30 flex items-center justify-center p-4">
+        <div class="glass-dark rounded-3xl p-8 max-w-md w-full border-2 border-amber-400 text-center shadow-2xl transform scale-95 transition-all">
+            <div class="text-6xl mb-4" id="winner-emoji">🏆</div>
+            <h2 class="game-font text-3xl sm:text-4xl text-amber-300 mb-2" id="winner-title">플레이어 1 승리!</h2>
+            <p class="text-slate-300 mb-6 font-medium" id="winner-desc">상대방 요새를 완파했습니다.</p>
+            
+            <button id="btn-modal-restart" class="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-lg py-3.5 rounded-2xl shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 transition">
+                새 게임 시작하기
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * 웹 오디오 API 기반 사운드 합성기 (외부 파일 없이 효과음 생성)
+ */
+class SoundEngine {
+    constructor() {
+        this.ctx = null;
+        this.enabled = true;
+    }
+
+    init() {
+        if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    playShoot() {
+        if (!this.enabled) return;
+        this.init();
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(300, now);
+        osc.frequency.exponentialRampToValueAtTime(80, now + 0.25);
+
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.25);
+    }
+
+    playExplosion() {
+        if (!this.enabled) return;
+        this.init();
+        const now = this.ctx.currentTime;
+
+        // 노이즈 버퍼 생성
+        const bufferSize = this.ctx.sampleRate * 0.4;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
+
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(800, now);
+        filter.frequency.exponentialRampToValueAtTime(50, now + 0.4);
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.6, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        noise.start(now);
+        noise.stop(now + 0.4);
+    }
+
+    playHit() {
+        if (!this.enabled) return;
+        this.init();
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.15);
+
+        gain.gain.setValueAtTime(0.5, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.15);
+    }
+}
+
+const sounds = new SoundEngine();
+
+class AngryFortressGame {
+    constructor() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        
+        // Game Settings & State
+        this.isAI = false;
+        this.turn = 1; // 1: Player 1, 2: Player 2
+        this.gameState = 'AIMING'; // 'AIMING', 'FLYING', 'RESOLVING', 'GAMEOVER'
+        this.wind = 0; // -5 ~ +5
+        
+        // Players HP
+        this.maxHP = 100;
+        this.p1HP = 100;
+        this.p2HP = 100;
+
+        // Slingshot Aiming Controls
+        this.isDragging = false;
+        this.dragStart = { x: 0, y: 0 };
+        this.dragCurrent = { x: 0, y: 0 };
+        this.maxDragDist = 120;
+
+        // Active Projectile
+        this.activeProjectile = null;
+        this.projectileTimer = 0;
+
+        // Visual Particles & Effects
+        this.particles = [];
+        this.clouds = [];
+        this.trajectoryPoints = [];
+
+        // Matter.js Module Aliases
+        this.Engine = Matter.Engine;
+        this.Render = Matter.Render;
+        this.World = Matter.World;
+        this.Bodies = Matter.Bodies;
+        this.Body = Matter.Body;
+        this.Events = Matter.Events;
+        this.Vector = Matter.Vector;
+
+        this.initPhysics();
+        this.resize();
+        this.initClouds();
+        this.setupEventListeners();
+        this.resetGame();
+
+        // Start Loop
+        requestAnimationFrame((t) => this.loop(t));
+    }
+
+    initPhysics() {
+        this.engine = this.Engine.create({
+            gravity: { x: 0, y: 1 }
+        });
+        this.world = this.engine.world;
+
+        // Collision Event
+        this.Events.on(this.engine, 'collisionStart', (evt) => this.handleCollisions(evt));
+    }
+
+    resize() {
+        this.width = window.innerWidth;
+        this.height = window.innerHeight;
+        this.canvas.width = this.width;
+        this.canvas.height = this.height;
+
+        // Re-scale positions if screen changes during play
+        if (this.ground) {
+            this.rebuildWorld();
+        }
+    }
+
+    initClouds() {
+        this.clouds = [];
+        for (let i = 0; i < 6; i++) {
+            this.clouds.push({
+                x: Math.random() * this.width,
+                y: Math.random() * (this.height * 0.3) + 30,
+                speed: Math.random() * 0.3 + 0.1,
+                radius: Math.random() * 30 + 20
+            });
+        }
+    }
+
+    rebuildWorld() {
+        // Clear Existing Physics Bodies
+        this.World.clear(this.world, false);
+
+        // Ground setup
+        const groundHeight = 120;
+        this.groundY = this.height - groundHeight / 2;
+        this.ground = this.Bodies.rectangle(this.width / 2, this.groundY + 20, this.width * 2, groundHeight, {
+            isStatic: true,
+            label: 'ground',
+            friction: 0.8
+        });
+
+        // Left & Right Walls
+        this.leftWall = this.Bodies.rectangle(-20, this.height / 2, 40, this.height * 2, { isStatic: true });
+        this.rightWall = this.Bodies.rectangle(this.width + 20, this.height / 2, 40, this.height * 2, { isStatic: true });
+
+        this.World.add(this.world, [this.ground, this.leftWall, this.rightWall]);
+
+        // Define Slingshot Positions
+        this.p1Sling = { x: Math.max(80, this.width * 0.15), y: this.height - groundHeight - 40 };
+        this.p2Sling = { x: Math.min(this.width - 80, this.width * 0.85), y: this.height - groundHeight - 40 };
+
+        // Spawn Characters
+        this.p1Body = this.Bodies.circle(this.p1Sling.x - 30, this.p1Sling.y + 15, 20, {
+            density: 0.005,
+            friction: 0.5,
+            label: 'player1'
+        });
+
+        this.p2Body = this.Bodies.circle(this.p2Sling.x + 30, this.p2Sling.y + 15, 20, {
+            density: 0.005,
+            friction: 0.5,
+            label: 'player2'
+        });
+
+        this.World.add(this.world, [this.p1Body, this.p2Body]);
+
+        // Build Fortresses
+        this.blocks = [];
+        this.buildFortress(this.p1Sling.x + 80, this.height - groundHeight, 'p1');
+        this.buildFortress(this.p2Sling.x - 80, this.height - groundHeight, 'p2');
+    }
+
+    buildFortress(startX, groundTopY, team) {
+        const blockWidth = 24;
+        const blockHeight = 50;
+        const roofWidth = 100;
+        const roofHeight = 20;
+
+        // 2-Story Block Tower with Roof
+        const wallOffset = 35;
+
+        // Level 1 Pillars
+        const b1 = this.createBlock(startX - wallOffset, groundTopY - blockHeight / 2, blockWidth, blockHeight, team);
+        const b2 = this.createBlock(startX + wallOffset, groundTopY - blockHeight / 2, blockWidth, blockHeight, team);
+        
+        // Level 1 Roof Beam
+        const r1 = this.createBlock(startX, groundTopY - blockHeight - roofHeight / 2, roofWidth, roofHeight, team);
+
+        // Level 2 Pillars
+        const b3 = this.createBlock(startX - wallOffset, groundTopY - blockHeight - roofHeight - blockHeight / 2, blockWidth, blockHeight, team);
+        const b4 = this.createBlock(startX + wallOffset, groundTopY - blockHeight - roofHeight - blockHeight / 2, blockWidth, blockHeight, team);
+
+        // Level 2 Roof Beam
+        const r2 = this.createBlock(startX, groundTopY - blockHeight * 2 - roofHeight * 1.5, roofWidth, roofHeight, team);
+
+        // Add extra target core block in center
+        const core = this.createBlock(startX, groundTopY - blockHeight / 2, 28, 28, team, true);
+
+        const newBlocks = [b1, b2, r1, b3, b4, r2, core];
+        this.blocks.push(...newBlocks);
+        this.World.add(this.world, newBlocks);
+    }
+
+    createBlock(x, y, w, h, team, isCore = false) {
+        return this.Bodies.rectangle(x, y, w, h, {
+            density: 0.002,
+            friction: 0.6,
+            restitution: 0.1,
+            label: 'block',
+            customData: {
+                team: team,
+                maxHp: isCore ? 60 : 40,
+                hp: isCore ? 60 : 40,
+                width: w,
+                height: h,
+                isCore: isCore
+            }
+        });
+    }
+
+    resetGame() {
+        this.p1HP = this.maxHP;
+        this.p2HP = this.maxHP;
+        this.turn = 1;
+        this.gameState = 'AIMING';
+        this.activeProjectile = null;
+        this.particles = [];
+        this.updateWind();
+        this.rebuildWorld();
+        this.updateUI();
+
+        document.getElementById('game-over-modal').classList.add('hidden');
+    }
+
+    updateWind() {
+        // Random Wind (-5.0 to +5.0)
+        this.wind = (Math.random() * 10 - 5);
+        this.engine.world.gravity.x = this.wind * 0.05;
+
+        // UI Update
+        const arrow = document.getElementById('wind-arrow');
+        const speedText = document.getElementById('wind-speed');
+        const absWind = Math.abs(this.wind).toFixed(1);
+
+        speedText.innerText = `${absWind} m/s`;
+        if (this.wind < -0.2) {
+            arrow.style.transform = 'rotate(180deg)';
+            arrow.className = 'fa-solid fa-arrow-right text-cyan-400 transition-transform duration-500';
+        } else if (this.wind > 0.2) {
+            arrow.style.transform = 'rotate(0deg)';
+            arrow.className = 'fa-solid fa-arrow-right text-amber-400 transition-transform duration-500';
+        } else {
+            arrow.style.transform = 'rotate(-90deg)';
+            arrow.className = 'fa-solid fa-arrow-right text-slate-400 transition-transform duration-500';
+        }
+    }
+
+    setupEventListeners() {
+        window.addEventListener('resize', () => this.resize());
+
+        // Mouse & Touch Controls for Slingshot Aiming
+        const getCanvasPos = (e) => {
+            const rect = this.canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        };
+
+        const onStart = (e) => {
+            if (this.gameState !== 'AIMING') return;
+            if (this.isAI && this.turn === 2) return;
+
+            const pos = getCanvasPos(e);
+            const activeSling = this.turn === 1 ? this.p1Sling : this.p2Sling;
+
+            // Check if user touched near the active slingshot
+            const dist = Math.hypot(pos.x - activeSling.x, pos.y - activeSling.y);
+            if (dist < 80) {
+                this.isDragging = true;
+                this.dragStart = { ...activeSling };
+                this.dragCurrent = { ...pos };
+            }
+        };
+
+        const onMove = (e) => {
+            if (!this.isDragging) return;
+            const pos = getCanvasPos(e);
+            const dx = pos.x - this.dragStart.x;
+            const dy = pos.y - this.dragStart.y;
+            const dist = Math.hypot(dx, dy);
+
+            if (dist > this.maxDragDist) {
+                const angle = Math.atan2(dy, dx);
+                this.dragCurrent = {
+                    x: this.dragStart.x + Math.cos(angle) * this.maxDragDist,
+                    y: this.dragStart.y + Math.sin(angle) * this.maxDragDist
+                };
+            } else {
+                this.dragCurrent = { ...pos };
+            }
+        };
+
+        const onEnd = () => {
+            if (!this.isDragging) return;
+            this.isDragging = false;
+
+            // Calculate launch vector (opposite of drag direction)
+            const dx = this.dragStart.x - this.dragCurrent.x;
+            const dy = this.dragStart.y - this.dragCurrent.y;
+            const dist = Math.hypot(dx, dy);
+
+            if (dist > 15) { // Minimum pull distance
+                const powerMultiplier = 0.22;
+                const forceX = dx * powerMultiplier;
+                const forceY = dy * powerMultiplier;
+
+                this.launchProjectile(this.dragStart.x, this.dragStart.y, forceX, forceY);
+            }
+        };
+
+        this.canvas.addEventListener('mousedown', onStart);
+        this.canvas.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onEnd);
+
+        this.canvas.addEventListener('touchstart', onStart, { passive: true });
+        this.canvas.addEventListener('touchmove', onMove, { passive: true });
+        window.addEventListener('touchend', onEnd);
+
+        // UI Buttons
+        document.getElementById('btn-reset').addEventListener('click', () => this.resetGame());
+        document.getElementById('btn-modal-restart').addEventListener('click', () => this.resetGame());
+
+        document.getElementById('btn-toggle-ai').addEventListener('click', () => {
+            this.isAI = !this.isAI;
+            document.getElementById('mode-text').innerText = this.isAI ? 'VS 컴퓨터(AI)' : '2P 대전';
+            document.getElementById('p2-name').innerText = this.isAI ? 'AI 로봇' : 'P2 블루팀';
+            this.resetGame();
+        });
+
+        document.getElementById('btn-sound').addEventListener('click', () => {
+            sounds.enabled = !sounds.enabled;
+            const icon = document.getElementById('sound-icon');
+            if (sounds.enabled) {
+                icon.className = 'fa-solid fa-volume-high text-emerald-400';
+            } else {
+                icon.className = 'fa-solid fa-volume-xmark text-slate-400';
+            }
+        });
+    }
+
+    launchProjectile(x, y, vx, vy) {
+        this.gameState = 'FLYING';
+        sounds.playShoot();
+
+        const radius = 14;
+        this.activeProjectile = this.Bodies.circle(x, y, radius, {
+            density: 0.015,
+            friction: 0.1,
+            restitution: 0.4,
+            label: 'projectile'
+        });
+
+        this.World.add(this.world, this.activeProjectile);
+        this.Body.setVelocity(this.activeProjectile, { x: vx, y: vy });
+
+        this.projectileTimer = 0;
+    }
+
+    handleCollisions(event) {
+        if (this.gameState !== 'FLYING' && this.gameState !== 'RESOLVING') return;
+
+        const pairs = event.pairs;
+        for (let pair of pairs) {
+            const { bodyA, bodyB } = pair;
+
+            // Calculate Impact Force
+            const speedA = Math.hypot(bodyA.velocity.x, bodyA.velocity.y);
+            const speedB = Math.hypot(bodyB.velocity.x, bodyB.velocity.y);
+            const relativeSpeed = Math.abs(speedA - speedB);
+
+            // Projectile Hits
+            if (bodyA.label === 'projectile' || bodyB.label === 'projectile') {
+                const proj = bodyA.label === 'projectile' ? bodyA : bodyB;
+                const target = bodyA === proj ? bodyB : bodyA;
+
+                if (relativeSpeed > 2.5) {
+                    sounds.playExplosion();
+                    this.createExplosionParticles(proj.position.x, proj.position.y);
+                    this.applyRadiusDamage(proj.position, 90, 35);
+                }
+            }
+
+            // High velocity collisions on Players or Blocks
+            this.checkDamageOnBody(bodyA, relativeSpeed);
+            this.checkDamageOnBody(bodyB, relativeSpeed);
+        }
+    }
+
+    checkDamageOnBody(body, speed) {
+        if (speed < 3.5) return; // Damage threshold
+
+        const damage = Math.floor(speed * 3.5);
+
+        if (body.label === 'player1') {
+            this.takeDamage(1, damage, body.position);
+        } else if (body.label === 'player2') {
+            this.takeDamage(2, damage, body.position);
+        } else if (body.label === 'block' && body.customData) {
+            body.customData.hp -= damage;
+            sounds.playHit();
+            this.showDamageText(body.position.x, body.position.y - 20, damage, '#f59e0b');
+
+            // Block Destruction
+            if (body.customData.hp <= 0) {
+                this.createDebrisParticles(body.position.x, body.position.y, body.customData.width);
+                this.World.remove(this.world, body);
+                const index = this.blocks.indexOf(body);
+                if (index > -1) this.blocks.splice(index, 1);
+            }
+        }
+    }
+
+    applyRadiusDamage(pos, radius, maxDamage) {
+        // Players Splash Damage
+        [this.p1Body, this.p2Body].forEach((p, idx) => {
+            if (!p) return;
+            const dist = Math.hypot(p.position.x - pos.x, p.position.y - pos.y);
+            if (dist < radius) {
+                const dmg = Math.floor((1 - dist / radius) * maxDamage);
+                if (dmg > 0) {
+                    this.takeDamage(idx + 1, dmg, p.position);
+                }
+            }
+        });
+
+        // Blocks Splash Damage
+        this.blocks.forEach(block => {
+            const dist = Math.hypot(block.position.x - pos.x, block.position.y - pos.y);
+            if (dist < radius) {
+                const dmg = Math.floor((1 - dist / radius) * maxDamage);
+                if (dmg > 0 && block.customData) {
+                    block.customData.hp -= dmg;
+                    if (block.customData.hp <= 0) {
+                        this.createDebrisParticles(block.position.x, block.position.y, block.customData.width);
+                        this.World.remove(this.world, block);
+                    }
+                }
+            }
+        });
+
+        // Clean up destroyed blocks array
+        this.blocks = this.blocks.filter(b => !b.customData || b.customData.hp > 0);
+    }
+
+    takeDamage(playerNum, amount, pos) {
+        if (amount <= 0) return;
+
+        if (playerNum === 1) {
+            this.p1HP = Math.max(0, this.p1HP - amount);
+        } else {
+            this.p2HP = Math.max(0, this.p2HP - amount);
+        }
+
+        sounds.playHit();
+        this.showDamageText(pos.x, pos.y - 30, amount, playerNum === 1 ? '#ef4444' : '#3b82f6');
+        this.updateUI();
+
+        if (this.p1HP <= 0 || this.p2HP <= 0) {
+            this.triggerGameOver(this.p1HP <= 0 ? 2 : 1);
+        }
+    }
+
+    showDamageText(x, y, text, color) {
+        const el = document.createElement('div');
+        el.className = 'damage-text';
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
+        el.style.color = color;
+        el.innerText = `-${text}`;
+        document.getElementById('damage-container').appendChild(el);
+
+        setTimeout(() => el.remove(), 1200);
+    }
+
+    switchTurn() {
+        if (this.gameState === 'GAMEOVER') return;
+
+        // Clean Active Projectile
+        if (this.activeProjectile) {
+            this.World.remove(this.world, this.activeProjectile);
+            this.activeProjectile = null;
+        }
+
+        this.turn = this.turn === 1 ? 2 : 1;
+        this.gameState = 'AIMING';
+        this.updateWind();
+        this.updateUI();
+
+        // AI's Turn Execution
+        if (this.isAI && this.turn === 2 && this.gameState !== 'GAMEOVER') {
+            setTimeout(() => this.executeAITurn(), 1000);
+        }
+    }
+
+    executeAITurn() {
+        if (this.gameState !== 'AIMING' || this.turn !== 2) return;
+
+        // AI Aim Calculation to hit P1
+        const startX = this.p2Sling.x;
+        const startY = this.p2Sling.y;
+        const targetX = this.p1Body.position.x;
+        const targetY = this.p1Body.position.y;
+
+        const dx = targetX - startX;
+        const dy = targetY - startY;
+
+        // Calculate ballistic estimation with wind adjustment
+        let forceX = dx * 0.18 - this.wind * 1.5;
+        let forceY = -Math.abs(dx) * 0.22 + (dy * 0.05);
+
+        // Add small random variation for realistic imperfection
+        forceX += (Math.random() - 0.5) * 2.5;
+        forceY += (Math.random() - 0.5) * 2.5;
+
+        // Visual Drag Simulation
+        this.isDragging = true;
+        this.dragStart = { ...this.p2Sling };
+        this.dragCurrent = {
+            x: this.p2Sling.x - forceX * 4,
+            y: this.p2Sling.y - forceY * 4
+        };
+
+        setTimeout(() => {
+            this.isDragging = false;
+            this.launchProjectile(startX, startY, forceX, forceY);
+        }, 800);
+    }
+
+    updateUI() {
+        const p1Pct = Math.max(0, (this.p1HP / this.maxHP) * 100);
+        const p2Pct = Math.max(0, (this.p2HP / this.maxHP) * 100);
+
+        document.getElementById('p1-hp-bar').style.width = `${p1Pct}%`;
+        document.getElementById('p2-hp-bar').style.width = `${p2Pct}%`;
+
+        document.getElementById('p1-hp-text').innerText = `${Math.ceil(this.p1HP)} / ${this.maxHP}`;
+        document.getElementById('p2-hp-text').innerText = `${Math.ceil(this.p2HP)} / ${this.maxHP}`;
+
+        const turnDot = document.getElementById('turn-dot');
+        const turnText = document.getElementById('turn-text');
+
+        if (this.turn === 1) {
+            turnDot.className = 'w-3.5 h-3.5 rounded-full bg-red-500 animate-pulse';
+            turnText.innerText = 'P1 공격 턴!';
+            turnText.className = 'game-font text-lg sm:text-2xl text-red-400 tracking-wider';
+        } else {
+            turnDot.className = 'w-3.5 h-3.5 rounded-full bg-blue-500 animate-pulse';
+            turnText.innerText = this.isAI ? 'AI 계산 중...' : 'P2 공격 턴!';
+            turnText.className = 'game-font text-lg sm:text-2xl text-blue-400 tracking-wider';
+        }
+    }
+
+    triggerGameOver(winner) {
+        this.gameState = 'GAMEOVER';
+
+        const modal = document.getElementById('game-over-modal');
+        const title = document.getElementById('winner-title');
+        const desc = document.getElementById('winner-desc');
+        const emoji = document.getElementById('winner-emoji');
+
+        modal.classList.remove('hidden');
+
+        if (winner === 1) {
+            emoji.innerText = '🏆';
+            title.innerText = 'P1 레드팀 승리!';
+            title.className = 'game-font text-3xl sm:text-4xl text-red-400 mb-2';
+            desc.innerText = '상대 요새를 전멸시키고 승리하였습니다!';
+        } else {
+            emoji.innerText = this.isAI ? '🤖' : '🏆';
+            title.innerText = this.isAI ? 'AI 승리!' : 'P2 블루팀 승리!';
+            title.className = 'game-font text-3xl sm:text-4xl text-blue-400 mb-2';
+            desc.innerText = '요새가 파괴되었습니다. 다시 도전해보세요!';
+        }
+    }
+
+    loop(timestamp) {
+        // Update Physics Engine
+        this.Engine.update(this.engine, 1000 / 60);
+
+        // Check Projectile Flying Timeout
+        if (this.gameState === 'FLYING' && this.activeProjectile) {
+            this.projectileTimer++;
+
+            const pos = this.activeProjectile.position;
+            const vel = this.activeProjectile.velocity;
+            const speed = Math.hypot(vel.x, vel.y);
+
+            // Create Trail Particles
+            if (this.projectileTimer % 2 === 0) {
+                this.particles.push({
+                    x: pos.x,
+                    y: pos.y,
+                    vx: (Math.random() - 0.5) * 0.5,
+                    vy: (Math.random() - 0.5) * 0.5,
+                    radius: Math.random() * 4 + 2,
+                    color: this.turn === 1 ? 'rgba(239, 68, 68, 0.6)' : 'rgba(59, 130, 246, 0.6)',
+                    life: 1.0
+                });
+            }
+
+            // Auto-Resolve Turn if projectile stops or falls out of bounds
+            if ((speed < 0.2 && this.projectileTimer > 60) || pos.y > this.height + 100 || pos.x < -100 || pos.x > this.width + 100 || this.projectileTimer > 360) {
+                this.gameState = 'RESOLVING';
+                setTimeout(() => this.switchTurn(), 600);
+            }
+        }
+
+        // Render Everything
+        this.render();
+
+        requestAnimationFrame((t) => this.loop(t));
+    }
+
+    render() {
+        // Clear Sky Background Gradient
+        const skyGradient = this.ctx.createLinearGradient(0, 0, 0, this.height);
+        skyGradient.addColorStop(0, '#0f172a');
+        skyGradient.addColorStop(0.6, '#1e293b');
+        skyGradient.addColorStop(1, '#334155');
+        this.ctx.fillStyle = skyGradient;
+        this.ctx.fillRect(0, 0, this.width, this.height);
+
+        // Render Clouds
+        this.renderClouds();
+
+        // Render Ground
+        this.ctx.fillStyle = '#15803d';
+        this.ctx.fillRect(0, this.groundY - 20, this.width, this.height - this.groundY + 20);
+        this.ctx.fillStyle = '#166534';
+        this.ctx.fillRect(0, this.groundY - 10, this.width, 10);
+
+        // Render Slingshots
+        this.renderSlingshot(this.p1Sling, '#ef4444');
+        this.renderSlingshot(this.p2Sling, '#3b82f6');
+
+        // Render Fortress Blocks
+        this.blocks.forEach(block => this.renderBlock(block));
+
+        // Render Players
+        this.renderPlayer(this.p1Body, '#ef4444', '😡');
+        this.renderPlayer(this.p2Body, '#3b82f6', this.isAI ? '🤖' : '😈');
+
+        // Render Trajectory Prediction Line when Dragging
+        if (this.isDragging && this.gameState === 'AIMING') {
+            this.renderTrajectory();
+        }
+
+        // Render Active Projectile
+        if (this.activeProjectile) {
+            this.ctx.save();
+            this.ctx.beginPath();
+            this.ctx.arc(this.activeProjectile.position.x, this.activeProjectile.position.y, 14, 0, Math.PI * 2);
+            this.ctx.fillStyle = this.turn === 1 ? '#f87171' : '#60a5fa';
+            this.ctx.shadowColor = this.turn === 1 ? '#ef4444' : '#3b82f6';
+            this.ctx.shadowBlur = 10;
+            this.ctx.fill();
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.stroke();
+            this.ctx.restore();
+        }
+
+        // Render Particles
+        this.renderParticles();
+    }
+
+    renderClouds() {
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+        this.clouds.forEach(c => {
+            c.x += c.speed;
+            if (c.x - c.radius > this.width) c.x = -c.radius;
+
+            this.ctx.beginPath();
+            this.ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
+            this.ctx.arc(c.x + c.radius * 0.7, c.y - c.radius * 0.2, c.radius * 0.8, 0, Math.PI * 2);
+            this.ctx.arc(c.x - c.radius * 0.7, c.y - c.radius * 0.2, c.radius * 0.7, 0, Math.PI * 2);
+            this.ctx.fill();
+        });
+    }
+
+    renderSlingshot(sling, color) {
+        this.ctx.strokeStyle = color;
+        this.ctx.lineWidth = 6;
+        this.ctx.lineCap = 'round';
+
+        // Base Fork
+        this.ctx.beginPath();
+        this.ctx.moveTo(sling.x, sling.y + 40);
+        this.ctx.lineTo(sling.x, sling.y);
+        this.ctx.lineTo(sling.x - 12, sling.y - 20);
+        this.ctx.moveTo(sling.x, sling.y);
+        this.ctx.lineTo(sling.x + 12, sling.y - 20);
+        this.ctx.stroke();
+
+        // Rubber Band during drag
+        if (this.isDragging && this.dragStart.x === sling.x) {
+            this.ctx.strokeStyle = '#d97706';
+            this.ctx.lineWidth = 4;
+            this.ctx.beginPath();
+            this.ctx.moveTo(sling.x - 12, sling.y - 20);
+            this.ctx.lineTo(this.dragCurrent.x, this.dragCurrent.y);
+            this.ctx.lineTo(sling.x + 12, sling.y - 20);
+            this.ctx.stroke();
+        }
+    }
+
+    renderBlock(block) {
+        if (!block.customData) return;
+
+        const pos = block.position;
+        const angle = block.angle;
+        const { width, height, hp, maxHp, isCore } = block.customData;
+        const hpRatio = Math.max(0, hp / maxHp);
+
+        this.ctx.save();
+        this.ctx.translate(pos.x, pos.y);
+        this.ctx.rotate(angle);
+
+        // Block Body
+        this.ctx.fillStyle = isCore ? `rgba(234, 179, 8, ${0.4 + hpRatio * 0.6})` : `rgba(148, 163, 184, ${0.3 + hpRatio * 0.7})`;
+        this.ctx.strokeStyle = isCore ? '#ca8a04' : '#475569';
+        this.ctx.lineWidth = 2;
+
+        this.ctx.beginPath();
+        this.ctx.roundRect(-width / 2, -height / 2, width, height, 4);
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        // Cracks texture if damaged
+        if (hpRatio < 0.7) {
+            this.ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+            this.ctx.beginPath();
+            this.ctx.moveTo(-width / 4, -height / 4);
+            this.ctx.lineTo(width / 4, height / 4);
+            this.ctx.stroke();
+        }
+
+        this.ctx.restore();
+    }
+
+    renderPlayer(body, color, emoji) {
+        if (!body) return;
+        const pos = body.position;
+
+        this.ctx.save();
+        this.ctx.translate(pos.x, pos.y);
+
+        // Player Circle Body
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, 20, 0, Math.PI * 2);
+        this.ctx.fillStyle = color;
+        this.ctx.fill();
+        this.ctx.lineWidth = 3;
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.stroke();
+
+        // Emoji Avatar
+        this.ctx.font = '20px sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(emoji, 0, 2);
+
+        this.ctx.restore();
+    }
+
+    renderTrajectory() {
+        const dx = this.dragStart.x - this.dragCurrent.x;
+        const dy = this.dragStart.y - this.dragCurrent.y;
+        const powerMultiplier = 0.22;
+
+        let vx = dx * powerMultiplier;
+        let vy = dy * powerMultiplier;
+        let px = this.dragStart.x;
+        let py = this.dragStart.y;
+
+        const gravity = this.engine.world.gravity.y;
+        const windAccel = this.wind * 0.05;
+
+        this.ctx.save();
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+
+        for (let i = 0; i < 25; i++) {
+            px += vx;
+            py += vy;
+            vy += gravity * 0.5; // Physics simulation step
+            vx += windAccel * 0.5;
+
+            this.ctx.beginPath();
+            this.ctx.arc(px, py, 4 - (i * 0.12), 0, Math.PI * 2);
+            this.ctx.fill();
+
+            if (py > this.groundY - 10) break;
+        }
+
+        this.ctx.restore();
+    }
+
+    createExplosionParticles(x, y) {
+        for (let i = 0; i < 25; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * 8 + 2;
+            this.particles.push({
+                x: x,
+                y: y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                radius: Math.random() * 5 + 3,
+                color: ['#f97316', '#eab308', '#ef4444', '#f87171'][Math.floor(Math.random() * 4)],
+                life: 1.0
+            });
+        }
+    }
+
+    createDebrisParticles(x, y, size) {
+        for (let i = 0; i < 8; i++) {
+            this.particles.push({
+                x: x + (Math.random() - 0.5) * size,
+                y: y + (Math.random() - 0.5) * size,
+                vx: (Math.random() - 0.5) * 4,
+                vy: (Math.random() - 0.5) * 4,
+                radius: Math.random() * 4 + 2,
+                color: '#94a3b8',
+                life: 0.8
+            });
+        }
+    }
+
+    renderParticles() {
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            const p = this.particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life -= 0.025;
+
+            if (p.life <= 0) {
+                this.particles.splice(i, 1);
+                continue;
+            }
+
+            this.ctx.save();
+            this.ctx.globalAlpha = p.life;
+            this.ctx.fillStyle = p.color;
+            this.ctx.beginPath();
+            this.ctx.arc(p.x, p.y, Math.max(0.1, p.radius * p.life), 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.restore();
+        }
+    }
+}
+
+// Initialize Game On Page Load
+window.onload = () => {
+    window.game = new AngryFortressGame();
+};
+</script>
+</body>
+</html>
